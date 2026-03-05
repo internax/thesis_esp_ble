@@ -1,138 +1,112 @@
-| Supported Targets | ESP32 | ESP32-C2 | ESP32-C3 | ESP32-C6 | ESP32-H2 | ESP32-S3 |
-| ----------------- | ----- | -------- | -------- | -------- | -------- | -------- |
+# ESP32-S3 BLE to UART Bridge
 
-# BLE Central Example
+## Overview
 
-(See the README.md file in the upper level 'examples' directory for more information about examples.)
+Firmware for **ESP32-S3 DevKitC-1** built on **ESP-IDF** with the **NimBLE** stack.
 
-This example creates GATT client and performs passive scan, it then connects to peripheral device if the device advertises connectability and the device advertises support for the Alert Notification service (0x1811) as primary service UUID.
+The device runs a continuous passive BLE scanner that captures non-connectable advertisements (`ADV_NONCONN_IND`) from sensor nodes (e.g. nRF-based devices), extracts relevant data, and forwards it over UART as binary frames to a second ESP32-S3 acting as a **Matter bridge**.
 
-After connection it enables bonding and link encryprion if the `Enable Link Encryption` flag is set in the example config.
+## Architecture
 
-It performs six GATT operations against the specified peer:
+Two C++ classes and one shared struct communicate through a **FreeRTOS queue**.
 
-* Reads the ANS Supported New Alert Category characteristic.
+```
+┌─────────────┐   device_state_t   ┌──────────────┐
+│ BleAdvScanner│ ──── queue ──────► │ UartProtocol │
+│  (NimBLE)   │                    │  (UART TX)   │
+└─────────────┘                    └──────────────┘
+```
 
-* After the read operation is completed, writes the ANS Alert Notification Control Point characteristic.
+### `device_state_t` (struct, namespace `ble`)
 
-* After the write operation is completed, subscribes to notifications for the ANS Unread Alert Status characteristic.
+| Field | Type | Description |
+|-------|------|-------------|
+| `mac` | `uint8_t[6]` | BLE MAC address (little-endian) |
+| `cmd` | `uint8_t` | Command byte |
+| `data` | `uint8_t` | Payload byte |
 
-* After the subscribe operation is completed, it subscribes to notifications for a user defined characteristic.
+### `BleAdvScanner` (namespace `ble`)
 
-* After this subscribe operation is completed, it writes to the user defined characteristic.
+- Receives a `QueueHandle_t` via constructor
+- Runs a continuous BLE passive scan (100 % duty cycle)
+- On each captured non-connectable advertisement, parses the raw payload into `device_state_t` and pushes it to the queue
+- Supports a MAC address **whitelist** (up to 16 devices) — only whitelisted devices are forwarded
 
-* After the write operation is completed, it reads from the user defined characteristic.
+### `UartProtocol`
 
-If the peer does not support a required service, characteristic, or descriptor, then the peer lied when it claimed support for the alert notification service! When this happens, or if a GATT procedure fails, this function immediately terminates the connection.
+- Receives a `QueueHandle_t`, UART port number and baud rate via constructor
+- Dequeues `device_state_t` entries and transmits them as binary frames over UART
 
-It uses ESP32's Bluetooth controller and NimBLE stack based BLE host.
+### UART Binary Protocol
 
-This example aims at understanding BLE service discovery, connection, encryption and characteristic operations.
+Each frame is **11 bytes**:
 
-To test this demo, use any BLE GATT server app that advertises support for the Alert Notification service (0x1811) and includes it in the GATT database.
+| Field | Size | Value / Description |
+|-------|------|---------------------|
+| `START` | 1 B | `0xAA` — frame delimiter |
+| `LEN`   | 1 B | Payload length in bytes |
+| `ADDR`  | 6 B | BLE MAC address |
+| `CMD`   | 1 B | Command byte (see table below) |
+| `DATA`  | 1 B | Payload byte |
+| `CRC8`  | 1 B | CRC-8 checksum over all preceding bytes |
 
-Note :
+### Command Table
 
-* To install the dependency packages needed, please refer to the top level [README file](../../../README.md#running-test-python-script-pytest).
-* Currently this Python utility is only supported on Linux (BLE communication is via BLuez + DBus).
+| Command | Byte | Description |
+|---------|------|-------------|
+| `create_on_off_node` | `0x01` | Create a new Matter on/off node for the given MAC |
+| `create_level_node`  | `0x02` | Create a new Matter level-control node for the given MAC |
+| `remove_node`        | `0x03` | Remove the Matter node with the given MAC |
+| `set_binary`         | `0x04` | Set binary value on the node with the given MAC |
+| `set_on_off_node`    | `0x05` | Set on/off state on the node with the given MAC |
+| `set_level_node`     | `0x06` | Set level value on the node with the given MAC |
 
-## How to Use Example
+## Project Structure
 
-Before project configuration and build, be sure to set the correct chip target using:
+```
+esp_ble_uart/
+├── main/
+│   ├── main.cpp              # Entry point — creates queue, starts scanner
+│   └── CMakeLists.txt
+└── components/
+    └── ble_nrf_comm/
+        ├── nrf_ble.hpp       # BleAdvScanner class & device_state_t
+        └── nrf_ble.cpp       # BleAdvScanner implementation
+```
+
+## Build & Flash
+
+### Requirements
+
+- [ESP-IDF v5.x](https://docs.espressif.com/projects/esp-idf/en/stable/esp32s3/)
+- ESP32-S3 DevKitC-1
+- USB cable
+
+### Build
 
 ```bash
-idf.py set-target <chip_name>
+idf.py set-target esp32s3
+idf.py build
 ```
 
-### Hardware Required
-
-* A development board with ESP32/ESP32-C2/ESP32-C3/ESP32-S3 SoC (e.g., ESP32-DevKitC, ESP-WROVER-KIT, etc.)
-* A USB cable for Power supply and programming
-
-See [Development Boards](https://www.espressif.com/en/products/devkits) for more information about it.
-
-### Configure the Project
-
-Open the project configuration menu:
+### Flash & Monitor
 
 ```bash
-idf.py menuconfig
+idf.py -p /dev/ttyUSB0 flash monitor
 ```
 
-In the `Example Configuration` menu:
+> Press `Ctrl+]` to exit the serial monitor.
 
-* Change the `Peer Address` option if needed.
+## Hardware
 
-### Build and Flash
+| Component | Description |
+|-----------|-------------|
+| ESP32-S3 DevKitC-1 | BLE scanner + UART transmitter (this firmware) |
+| ESP32-S3 (second board) | Matter bridge — receives UART frames |
 
-Run `idf.py -p PORT flash monitor` to build, flash and monitor the project.
+UART connection between the two boards:
 
-(To exit the serial monitor, type ``Ctrl-]``.)
-
-See the [Getting Started Guide](https://idf.espressif.com/) for full steps to configure and use ESP-IDF to build projects.
-
-## Example Output
-
-This is the console output on successful connection:
-
-```
-I (202) BTDM_INIT: BT controller compile version [0b60040]
-I (202) system_api: Base MAC address is not set, read default base MAC address from BLK0 of EFUSE
-W (212) phy_init: failed to load RF calibration data (0xffffffff), falling back to full calibration
-I (422) phy: phy_version: 4007, 9c6b43b, Jan 11 2019, 16:45:07, 0, 2
-I (722) NimBLE_BLE_CENT: BLE Host Task Started
-GAP procedure initiated: stop advertising.
-GAP procedure initiated: discovery; own_addr_type=0 filter_policy=0 passive=1 limited=0 filter_duplicates=1 duration=forever
-GAP procedure initiated: connect; peer_addr_type=1 peer_addr=xx:xx:xx:xx:xx:xx scan_itvl=16 scan_window=16 itvl_min=24 itvl_max=40 latency=0 supervision_timeout=256 min_ce_len=16 max_ce_len=768 own_addr_type=0
-Connection established
-Connection secured
-encryption change event; status=0
-GATT procedure initiated: discover all services
-GATT procedure initiated: discover all characteristics; start_handle=1 end_handle=3
-GATT procedure initiated: discover all characteristics; start_handle=20 end_handle=26
-GATT procedure initiated: discover all characteristics; start_handle=40 end_handle=65535
-GATT procedure initiated: discover all descriptors; chr_val_handle=42 end_handle=43
-GATT procedure initiated: discover all descriptors; chr_val_handle=49 end_handle=65535
-Service discovery complete; status=0 conn_handle=0
-GATT procedure initiated: read; att_handle=45
-GATT procedure initiated: write; att_handle=47 len=2
-GATT procedure initiated: write; att_handle=43 len=2
-Read complete; status=0 conn_handle=0 attr_handle=45 value=0x02
-Write complete; status=0 conn_handle=0 attr_handle=47
-Subscribe complete; status=0 conn_handle=0 attr_handle=43
-GATT procedure initiated: write; att_handle=26 len=2
-GATT procedure initiated: write; att_handle=25 len=1
-GATT procedure initiated: read; att_handle=25
-Subscribe to the custom subscribable characteristic complete; status=0 conn_handle=1 attr_handle=26 value=
-Write to the custom subscribable characteristic complete; status=0 conn_handle=1 attr_handle=25
-received notification; conn_handle=1 attr_handle=25 attr_len=4
-Read complete for the subscribable characteristic; status=0 conn_handle=1 attr_handle=25 value=0x19
-```
-
-This is the console output on failure (or peripheral does not support New Alert Service category):
-
-```
-I (180) BTDM_INIT: BT controller compile version [8e87ec7]
-I (180) system_api: Base MAC address is not set, read default base MAC address from BLK0 of EFUSE
-I (250) phy: phy_version: 4000, b6198fa, Sep  3 2018, 15:11:06, 0, 0
-I (480) NimBLE_BLE_CENT: BLE Host Task Started
-GAP procedure initiated: stop advertising.
-GAP procedure initiated: discovery; own_addr_type=0 filter_policy=0 passive=1 limited=0 filter_duplicates=1 duration=forever
-GAP procedure initiated: connect; peer_addr_type=1 peer_addr=xx:xx:xx:xx:xx:xx scan_itvl=16 scan_window=16 itvl_min=24 itvl_max=40 latency=0 supervision_timeout=256 min_ce_len=16 max_ce_len=768 own_addr_type=0
-Connection established
-GATT procedure initiated: discover all services
-GATT procedure initiated: discover all characteristics; start_handle=1 end_handle=3
-GATT procedure initiated: discover all characteristics; start_handle=20 end_handle=26
-GATT procedure initiated: discover all characteristics; start_handle=40 end_handle=65535
-GATT procedure initiated: discover all descriptors; chr_val_handle=42 end_handle=43
-GATT procedure initiated: discover all descriptors; chr_val_handle=47 end_handle=65535
-Service discovery complete; status=0 conn_handle=0
-Error: Peer doesn't support the Supported New Alert Category characteristic
-GAP procedure initiated: terminate connection; conn_handle=0 hci_reason=19
-disconnect; reason=534
-```
-
-
-## Troubleshooting
-
-For any technical queries, please open an [issue](https://github.com/espressif/esp-idf/issues) on GitHub. We will get back to you soon.
+| Signal | ESP32-S3 #1 (scanner) | ESP32-S3 #2 (bridge) |
+|--------|-----------------------|----------------------|
+| TX     | configured UART TX pin | RX pin |
+| GND    | GND | GND |
