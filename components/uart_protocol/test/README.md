@@ -32,6 +32,13 @@ Výstup při úspěchu:
 16/16 Tests OK
 ```
 
+### Přidání nového testovacího souboru
+
+1. Vytvoř `unit/main/test_neco.cpp` s `TEST_CASE` makry
+2. Přidej ho do `unit/main/CMakeLists.txt` do `SRCS`
+3. `WHOLE_ARCHIVE` v CMakeLists.txt musí zůstat — bez něj linker zahodí object soubory
+   na které nic explicitně neodkazuje, a jejich testy se nespustí
+
 ---
 
 ## Integrační test

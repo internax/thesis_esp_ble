@@ -3,4 +3,5 @@ idf_component_register(
           "test_encode_decode.cpp"
     INCLUDE_DIRS "."
     REQUIRES unity uart_protocol
+    WHOLE_ARCHIVE
 )
