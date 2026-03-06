@@ -25,11 +25,12 @@ static const char *TAG = "BLE_SCANNER";
 #include "freertos/task.h"
 #include "esp_log.h"
 #include "nrf_ble.hpp"
+#include "bridge_types.hpp"
 
 static void queue_reader_task(void *arg)
 {
     QueueHandle_t queue = static_cast<QueueHandle_t>(arg);
-    ble::device_state_t state;
+    bridge::device_state_t state;
 
     while (true) {
         if (xQueueReceive(queue, &state, portMAX_DELAY)) {
@@ -50,7 +51,7 @@ extern "C" void app_main(void)
     }
     ESP_ERROR_CHECK(ret);
 
-    QueueHandle_t queue = xQueueCreate(10, sizeof(ble::device_state_t));
+    QueueHandle_t queue = xQueueCreate(10, sizeof(bridge::device_state_t));
 
     static ble::BleAdvScanner scanner(queue);
 

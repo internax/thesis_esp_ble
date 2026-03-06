@@ -40,11 +40,18 @@ namespace ble
         nimble_port_freertos_init(host_task);
     }
 
-    bool BleAdvScanner::add_device(const uint8_t mac[6])
+    bool BleAdvScanner::pair(const uint8_t mac[6])
     {
         xSemaphoreTake(whitelist_mutex_, portMAX_DELAY);
+        // Idempotent: already in whitelist is OK
+        for (size_t i = 0; i < whitelist_count_; i++) {
+            if (memcmp(whitelist_[i], mac, 6) == 0) {
+                xSemaphoreGive(whitelist_mutex_);
+                return true;
+            }
+        }
         bool ok = false;
-        if (whitelist_count_ < MAX_DEVICES) {
+        if (whitelist_count_ < bridge::MAX_DEVICES) {
             memcpy(whitelist_[whitelist_count_++], mac, 6);
             ok = true;
         }
@@ -52,13 +59,13 @@ namespace ble
         return ok;
     }
 
-    bool BleAdvScanner::remove_device(const uint8_t mac[6])
+    bool BleAdvScanner::unpair(const uint8_t mac[6])
     {
         xSemaphoreTake(whitelist_mutex_, portMAX_DELAY);
         bool ok = false;
         for (size_t i = 0; i < whitelist_count_; i++) {
             if (memcmp(whitelist_[i], mac, 6) == 0) {
-                // přepiš posledním prvkem a zmenši počet
+                // Replace with last element and shrink
                 whitelist_count_--;
                 memcpy(whitelist_[i], whitelist_[whitelist_count_], 6);
                 ok = true;
@@ -169,7 +176,7 @@ namespace ble
             return 0;
         }
 
-        device_state_t state;
+        bridge::device_state_t state;
         if (parse_adv(disc, state)) {
             xQueueSend(queue_, &state, 0);
         }
@@ -177,7 +184,7 @@ namespace ble
         return 0;
     }
 
-    bool BleAdvScanner::parse_adv(const struct ble_gap_disc_desc *disc, device_state_t &out)
+    bool BleAdvScanner::parse_adv(const struct ble_gap_disc_desc *disc, bridge::device_state_t &out)
     {
         memcpy(out.mac, disc->addr.val, 6);
 
