@@ -11,6 +11,6 @@ dependencies:
     version: '*'
 direct_dependencies:
 - nimble_central_utils
-manifest_hash: c5a5a885ca0035e4039837097ba27e02715073bf90973a6ba8da9ca4abe7d649
-target: esp32s3
+manifest_hash: 452b1ac3f8e4b28b6a149703b17af51eeeb8220b6cef587b66eb40b7791d520f
+target: esp32
 version: 2.0.0
