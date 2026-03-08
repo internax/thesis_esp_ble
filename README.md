@@ -10,9 +10,9 @@ The device manages BLE device pairing via NFC and runs a continuous passive BLE 
 - BLE scanner - class for receiveing, filtering and parsing bt packets.
 - UART comuniction - PtP comunication, tested by integration test component
 - UART - crc, endoging and decoding tested by unit test
+- Test pipeline ble endpoint -> esp nimble -> ble_scanner -> uart
 
 ## Needs to be done
-- Test pipeline ble endpoint -> esp nimble -> ble_scanner -> uart
 - Prepare class for nfc pairing
 
 ## Architecture
