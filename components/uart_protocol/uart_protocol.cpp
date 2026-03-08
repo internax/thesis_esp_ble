@@ -25,8 +25,8 @@ namespace uart
         ESP_ERROR_CHECK(uart_param_config(port_, &cfg));
         ESP_ERROR_CHECK(uart_set_pin(port_, tx_pin, rx_pin,
                                      UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
-        // RX buffer: room for several frames; no TX ring buffer (synchronous writes)
-        ESP_ERROR_CHECK(uart_driver_install(port_, FRAME_SIZE * 4, 0, 0, nullptr, 0));
+        // RX buffer must be > 128 (HW FIFO size); no TX ring buffer (synchronous writes)
+        ESP_ERROR_CHECK(uart_driver_install(port_, 256, 0, 0, nullptr, 0));
         tx_mutex_ = xSemaphoreCreateMutex();
     }
 

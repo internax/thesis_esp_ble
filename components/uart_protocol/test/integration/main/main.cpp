@@ -10,6 +10,7 @@
  * Flash receiver: comment out #define UART_ROLE_SENDER
  */
 
+#include <cstring>
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/task.h"
@@ -25,6 +26,7 @@ static const char *TAG = "UART_TEST";
 #define BAUD_RATE   115200
 
 // Comment out on the receiver board
+// #define UART_ROLE_SENDER
 #define UART_ROLE_RECEIVER
 
 // =============================================================================

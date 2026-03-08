@@ -55,7 +55,10 @@ extern "C" void app_main(void)
 
     static ble::BleAdvScanner scanner(queue);
 
-    xTaskCreate(queue_reader_task, "queue_reader", 2048, queue, 5, nullptr);
+    static const uint8_t MY_MAC[6] = { 0xca, 0xe8, 0x92, 0x96, 0x77, 0x32 };
+    scanner.pair(MY_MAC);
+
+    xTaskCreate(queue_reader_task, "queue_reader", 4096, queue, 5, nullptr);
 
     scanner.start();
 }

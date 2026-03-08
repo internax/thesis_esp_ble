@@ -1,7 +1,7 @@
 {
   "C_Cpp.intelliSenseEngine": "default",
   "idf.buildPath": "${workspaceFolder}/build",
-  "idf.port": "/dev/tty.usbmodem101",
+  "idf.port": "/dev/tty.usbmodem1101",
   "idf.flashType": "UART",
   "idf.currentSetup": "/Users/marektatyrek/esp/esp-idf"
 }

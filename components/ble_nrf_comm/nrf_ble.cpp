@@ -200,10 +200,10 @@ namespace ble
             const uint8_t *ad_data     = &data[offset + 2];
             uint8_t        ad_data_len = ad_len - 1;
 
-            // Manufacturer Specific Data: [company_id: 2B][cmd: 1B][data: 1B]
-            if (ad_type == 0xFF && ad_data_len >= 4) {
-                out.cmd  = ad_data[2];
-                out.data = ad_data[3];
+            // Manufacturer Specific Data: [company_id: 2B][data: 1B]
+            if (ad_type == 0xFF && ad_data_len >= 3) {
+                out.cmd  = 0;
+                out.data = ad_data[2];
                 return true;
             }
 
