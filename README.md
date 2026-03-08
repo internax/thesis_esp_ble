@@ -6,24 +6,19 @@ Firmware for **ESP32-S3 DevKitC-1** built on **ESP-IDF** with the **NimBLE** sta
 
 The device manages BLE device pairing via NFC and runs a continuous passive BLE scanner that captures non-connectable advertisements (`ADV_NONCONN_IND`) from paired devices. Data is forwarded over **bidirectional UART** to a second ESP32-S3 acting as a **Matter bridge**.
 
+## Currently working
+- BLE scanner - class for receiveing, filtering and parsing bt packets.
+- UART comuniction - PtP comunication, tested by integration test component
+- UART - crc, endoging and decoding tested by unit test
+
+## Needs to be done
+- Test pipeline ble endpoint -> esp nimble -> ble_scanner -> uart
+- Prepare class for nfc pairing
+
 ## Architecture
 
 Three C++ classes and one shared struct communicate through two **FreeRTOS queues** (`tx_queue` and `rx_queue`).
 
-<!-- ```
-                        ┌──────────────┐
-           pair/unpair  │  NfcPairing  │  pair/unpair
-          ┌─────────────┤  (NFC + btn) ├─────────────┐
-          │             └──────┬───────┘             │
-          ▼                    │ wait_for_ack         ▼
-  ┌──────────────┐             │              ┌──────────────┐
-  │  BleScanner  │             │              │ UartProtocol │
-  │  (NimBLE)    │─tx_queue───►│◄────rx_queue─│  (UART TX/RX)│
-  └──────────────┘             │              └──────────────┘
-                               ▼
-                         Matter bridge
-                         (ESP32-S3 #2)
-``` -->
 
 ``` mermaid
 

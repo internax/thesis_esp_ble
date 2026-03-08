@@ -68,7 +68,7 @@ idf.py set-target esp32s3
 idf.py build flash monitor
 ```
 
-Flashni každou desku zvlášť se správným `#define`.
+Flashnout každou desku zvlášť se správným `#define`.
 
 ### Očekávaný výstup
 
