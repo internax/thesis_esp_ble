@@ -81,7 +81,7 @@ namespace ble
         xSemaphoreTake(whitelist_mutex_, portMAX_DELAY);
         if (whitelist_count_ == 0) {
             xSemaphoreGive(whitelist_mutex_);
-            return true;  // prázdný whitelist = pustíme vše (discovery mode)
+            return false;  // prázdný whitelist = nic nespárováno, blokujeme vše
         }
         for (size_t i = 0; i < whitelist_count_; i++) {
             if (memcmp(whitelist_[i], mac, 6) == 0) {
