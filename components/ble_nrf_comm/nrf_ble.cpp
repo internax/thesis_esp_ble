@@ -44,14 +44,17 @@ namespace ble
     {
         xSemaphoreTake(whitelist_mutex_, portMAX_DELAY);
         // Idempotent: already in whitelist is OK
-        for (size_t i = 0; i < whitelist_count_; i++) {
-            if (memcmp(whitelist_[i], mac, 6) == 0) {
+        for (size_t i = 0; i < whitelist_count_; i++) 
+        {
+            if (memcmp(whitelist_[i], mac, 6) == 0) 
+            {
                 xSemaphoreGive(whitelist_mutex_);
                 return true;
             }
         }
         bool ok = false;
-        if (whitelist_count_ < bridge::MAX_DEVICES) {
+        if (whitelist_count_ < bridge::MAX_DEVICES) 
+        {
             memcpy(whitelist_[whitelist_count_++], mac, 6);
             ok = true;
         }
@@ -63,11 +66,12 @@ namespace ble
     {
         xSemaphoreTake(whitelist_mutex_, portMAX_DELAY);
         bool ok = false;
-        for (size_t i = 0; i < whitelist_count_; i++) {
-            if (memcmp(whitelist_[i], mac, 6) == 0) {
-                // Replace with last element and shrink
+        for (size_t i = 0; i < whitelist_count_; i++) 
+        {
+            if (memcmp(whitelist_[i], mac, 6) == 0) 
+            {
                 whitelist_count_--;
-                memcpy(whitelist_[i], whitelist_[whitelist_count_], 6);
+                memcpy(whitelist_[i], whitelist_[whitelist_count_], 6); //přepíšu mazaný prvkem na posledním místě
                 ok = true;
                 break;
             }
@@ -79,12 +83,16 @@ namespace ble
     bool BleAdvScanner::is_whitelisted(const uint8_t mac[6])
     {
         xSemaphoreTake(whitelist_mutex_, portMAX_DELAY);
-        if (whitelist_count_ == 0) {
+        if (whitelist_count_ == 0) 
+        {
             xSemaphoreGive(whitelist_mutex_);
             return false;  // prázdný whitelist = nic nespárováno, blokujeme vše
         }
-        for (size_t i = 0; i < whitelist_count_; i++) {
-            if (memcmp(whitelist_[i], mac, 6) == 0) {
+
+        for (size_t i = 0; i < whitelist_count_; i++) 
+        {
+            if (memcmp(whitelist_[i], mac, 6) == 0) 
+            {
                 xSemaphoreGive(whitelist_mutex_);
                 return true;
             }
@@ -100,7 +108,7 @@ namespace ble
     void BleAdvScanner::host_task(void *param)
     {
         ESP_LOGI(TAG, "BLE Host Task Started");
-        nimble_port_run();              // blokuje dokud BLE stack běží
+        nimble_port_run();              // spuštění ble tasku, blokuje dokud BLE stack běží
         nimble_port_freertos_deinit();
     }
 
@@ -123,7 +131,7 @@ namespace ble
     // Instanční metody — skutečná logika
     // -------------------------------------------------------------------------
 
-    void BleAdvScanner::on_sync()
+    void BleAdvScanner::on_sync() // ověření mac přiřazení mac adresy a spuštění scanu
     {
         int rc = ble_hs_util_ensure_addr(0);
         assert(rc == 0);
@@ -140,7 +148,7 @@ namespace ble
         uint8_t own_addr_type;
         struct ble_gap_disc_params disc_params = {};
 
-        int rc = ble_hs_id_infer_auto(0, &own_addr_type);
+        int rc = ble_hs_id_infer_auto(0, &own_addr_type); // podíváme se jaké adresy jsou k dispozici, preferujeme adresu zařízení a uložíme dostupný typ
         if (rc != 0) {
             ESP_LOGE(TAG, "Error determining address type; rc=%d", rc);
             return;

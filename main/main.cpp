@@ -20,21 +20,21 @@ static const char *TAG = "main";
 
 // NFC
 static constexpr uart_port_t NFC_UART_PORT = UART_NUM_2;
-static constexpr int         NFC_TX_PIN    = 37;
-static constexpr int         NFC_RX_PIN    = 36;
+static constexpr int         NFC_TX_PIN    = 15;
+static constexpr int         NFC_RX_PIN    = 7;
 
 // UART bridge
 static constexpr uart_port_t UART_PORT   = UART_NUM_1;
-static constexpr int         UART_TX_PIN = 16;
-static constexpr int         UART_RX_PIN = 17;
+static constexpr int         UART_TX_PIN = 12;
+static constexpr int         UART_RX_PIN = 13;
 static constexpr int         UART_BAUD   = 115200;
 
 // Tlačítka
-static constexpr gpio_num_t BTN_PAIR   = GPIO_NUM_5;
-static constexpr gpio_num_t BTN_UNPAIR = GPIO_NUM_6;
+static constexpr gpio_num_t BTN_PAIR   = GPIO_NUM_21;
+static constexpr gpio_num_t BTN_UNPAIR = GPIO_NUM_14;
 
 // LED (WS2812B) — GPIO 48 je vestavěná RGB LED na ESP32-S3 DevKitC-1
-static constexpr gpio_num_t LED_PIN = GPIO_NUM_48;
+static constexpr gpio_num_t LED_PIN = GPIO_NUM_10;
 
 extern "C" void app_main(void)
 {
