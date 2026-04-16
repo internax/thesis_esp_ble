@@ -34,4 +34,9 @@ namespace bridge
     static constexpr uint8_t CMD_ACK_OK  = 0x80;
     static constexpr uint8_t CMD_ACK_ERR = 0x81;
 
+    // -------------------------------------------------------------------------
+    // Control commands — BLE scanner → Matter bridge
+    // -------------------------------------------------------------------------
+    static constexpr uint8_t CMD_FACTORY_RESET = 0xF0;
+
 } // namespace bridge

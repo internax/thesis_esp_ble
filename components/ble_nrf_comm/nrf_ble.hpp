@@ -21,19 +21,29 @@ namespace ble
         void start();
 
         // Whitelist — called by NfcPairing
-        bool pair(const uint8_t mac[6]);
+        bool pair(const uint8_t mac[6], uint8_t device_type);
         bool unpair(const uint8_t mac[6]);
+        void load_from_nvs();
+        void clear_all();   // factory reset — wipes RAM whitelist + NVS
 
     private:
         QueueHandle_t          queue_;
         static BleAdvScanner  *instance_;
 
         // Whitelist
-        uint8_t                whitelist_[bridge::MAX_DEVICES][6];
+        struct whitelist_entry_t {
+            uint8_t mac[6];
+            uint8_t device_type;
+            uint8_t last_data;
+            bool    valid;
+        };
+        whitelist_entry_t      whitelist_[bridge::MAX_DEVICES] = {};
         size_t                 whitelist_count_ = 0;
         SemaphoreHandle_t      whitelist_mutex_;
 
         bool is_whitelisted(const uint8_t mac[6]);
+        whitelist_entry_t *find_entry(const uint8_t mac[6]);
+        void save_to_nvs();
 
         // Static C-compatible callbacks passed to NimBLE
         static void host_task(void *param);

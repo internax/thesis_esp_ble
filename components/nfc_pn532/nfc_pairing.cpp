@@ -136,7 +136,7 @@ void NfcPairing::pairing_loop()
 
 bool NfcPairing::do_pair(const uint8_t mac[6], uint8_t device_type)
 {
-    if (!scanner_.pair(mac)) {
+    if (!scanner_.pair(mac, device_type)) {
         ESP_LOGW(TAG, "BleScanner::pair failed (whitelist full?)");
         return false;
     }
@@ -169,7 +169,7 @@ bool NfcPairing::do_unpair(const uint8_t mac[6])
 
     if (!uart_.send_reliable(msg, UART_RETRIES, UART_TIMEOUT_MS)) {
         ESP_LOGW(TAG, "NODE_REMOVED UART failed — rolling back whitelist");
-        scanner_.pair(mac);
+        scanner_.pair(mac, 0);
         return false;
     }
 

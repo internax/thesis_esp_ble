@@ -30,11 +30,58 @@ static constexpr int         UART_RX_PIN = 13;
 static constexpr int         UART_BAUD   = 115200;
 
 // Tlačítka
-static constexpr gpio_num_t BTN_PAIR   = GPIO_NUM_21;
-static constexpr gpio_num_t BTN_UNPAIR = GPIO_NUM_14;
+static constexpr gpio_num_t BTN_PAIR         = GPIO_NUM_21;
+static constexpr gpio_num_t BTN_UNPAIR       = GPIO_NUM_14;
+static constexpr gpio_num_t BTN_FACTORY_RESET = GPIO_NUM_11;
+static constexpr uint32_t   FACTORY_RESET_HOLD_MS = 5000;
 
 // LED (WS2812B) — GPIO 48 je vestavěná RGB LED na ESP32-S3 DevKitC-1
 static constexpr gpio_num_t LED_PIN = GPIO_NUM_10;
+
+struct factory_reset_arg_t {
+    ble::BleAdvScanner *scanner;
+    uart::UartProtocol *uart;
+};
+
+static void factory_reset_task(void *arg)
+{
+    auto *ctx = static_cast<factory_reset_arg_t *>(arg);
+
+    gpio_config_t cfg = {
+        .pin_bit_mask = (1ULL << BTN_FACTORY_RESET),
+        .mode         = GPIO_MODE_INPUT,
+        .pull_up_en   = GPIO_PULLUP_ENABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type    = GPIO_INTR_DISABLE,
+    };
+    gpio_config(&cfg);
+
+    while (true) {
+        if (gpio_get_level(BTN_FACTORY_RESET) == 0) {
+            uint32_t held_ms = 0;
+            while (gpio_get_level(BTN_FACTORY_RESET) == 0) {
+                vTaskDelay(pdMS_TO_TICKS(50));
+                held_ms += 50;
+                if (held_ms >= FACTORY_RESET_HOLD_MS) {
+                    ESP_LOGW("factory_reset", "Factory reset triggered");
+
+                    // 1. Smazat lokální whitelist
+                    ctx->scanner->clear_all();
+
+                    // 2. Informovat Matter bridge (bez čekání na ACK — restartuje se)
+                    bridge::device_state_t msg = {};
+                    msg.cmd = bridge::CMD_FACTORY_RESET;
+                    ctx->uart->send_reliable(msg, 1, 200);
+
+                    // 3. Restart BLE scanneru
+                    esp_restart();
+                    break;
+                }
+            }
+        }
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
+}
 
 extern "C" void app_main(void)
 {
@@ -64,9 +111,13 @@ extern "C" void app_main(void)
         return;
     }
 
+    scanner.load_from_nvs();
     uart_proto.start();
     scanner.start();
     led_indicator.start();
+
+    static factory_reset_arg_t fr_arg = { &scanner, &uart_proto };
+    xTaskCreate(factory_reset_task, "fr_button", 4096, &fr_arg, 3, nullptr);
 
     nfc_pairing.set_event_callback([&led_indicator](nfc::PairingEvent e) {
         switch (e) {

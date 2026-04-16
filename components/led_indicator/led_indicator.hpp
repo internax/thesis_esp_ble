@@ -8,7 +8,7 @@
 namespace led {
 
 enum class LedState : uint8_t {
-    OFF,          // zhasnuto
+    IDLE,         // bílá trvale — zařízení v provozu, nečinné
     IN_PROGRESS,  // modrá blikající — čeká se na NFC tag
     SUCCESS,      // zelená 2 s, pak zhasne
     FAILED,       // červená 2 s, pak zhasne

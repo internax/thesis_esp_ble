@@ -72,9 +72,9 @@ void LedIndicator::led_task(void *arg)
 
 void LedIndicator::led_loop()
 {
-    LedState   current  = LedState::OFF;
+    LedState   current  = LedState::IDLE;
     bool       blink_on = false;
-    TickType_t timeout  = portMAX_DELAY;
+    TickType_t timeout  = 0; // první průchod okamžitě zpracuje IDLE (rozsvítí bílou)
 
     while (true) {
         LedState next;
@@ -87,8 +87,8 @@ void LedIndicator::led_loop()
 
         switch (current) {
 
-        case LedState::OFF:
-            clear();
+        case LedState::IDLE:
+            set_color(BRIGHTNESS, BRIGHTNESS, BRIGHTNESS); // bílá
             timeout = portMAX_DELAY;
             break;
 
@@ -106,9 +106,8 @@ void LedIndicator::led_loop()
                 set_color(0, BRIGHTNESS, 0); // zelená
                 timeout = pdMS_TO_TICKS(2000);
             } else {
-                clear();
-                current = LedState::OFF;
-                timeout = portMAX_DELAY;
+                current = LedState::IDLE;
+                timeout = 0; // okamžitě zpracuj IDLE (rozsvítí bílou)
             }
             break;
 
@@ -117,9 +116,8 @@ void LedIndicator::led_loop()
                 set_color(BRIGHTNESS, 0, 0); // červená
                 timeout = pdMS_TO_TICKS(2000);
             } else {
-                clear();
-                current = LedState::OFF;
-                timeout = portMAX_DELAY;
+                current = LedState::IDLE;
+                timeout = 0; // okamžitě zpracuj IDLE (rozsvítí bílou)
             }
             break;
         }

@@ -1,5 +1,6 @@
 #include "nrf_ble.hpp"
 #include "services/gap/ble_svc_gap.h"
+#include "nvs.h"
 #include <cstring>
 
 extern "C" void ble_store_config_init(void);
@@ -22,6 +23,83 @@ namespace ble
         whitelist_mutex_ = xSemaphoreCreateMutex();
     }
 
+    void BleAdvScanner::load_from_nvs()
+    {
+        nvs_handle_t handle;
+        if (nvs_open("ble_wl", NVS_READONLY, &handle) != ESP_OK) {
+            ESP_LOGI(TAG, "NVS: whitelist not found, starting empty");
+            return;
+        }
+
+        uint8_t count = 0;
+        nvs_get_u8(handle, "count", &count);
+
+        if (count > bridge::MAX_DEVICES) count = bridge::MAX_DEVICES;
+
+        if (count > 0) {
+            uint8_t macs[bridge::MAX_DEVICES][6];
+            uint8_t types[bridge::MAX_DEVICES] = {};
+            size_t  size = count * 6;
+            if (nvs_get_blob(handle, "macs", macs, &size) == ESP_OK) {
+                size_t tsize = count;
+                nvs_get_blob(handle, "types", types, &tsize);  // best-effort, default 0 if missing
+                xSemaphoreTake(whitelist_mutex_, portMAX_DELAY);
+                for (uint8_t i = 0; i < count; i++) {
+                    memcpy(whitelist_[i].mac, macs[i], 6);
+                    whitelist_[i].device_type = types[i];
+                    whitelist_[i].last_data   = 0xFF;
+                    whitelist_[i].valid       = true;
+                }
+                whitelist_count_ = count;
+                xSemaphoreGive(whitelist_mutex_);
+                ESP_LOGI(TAG, "NVS: loaded %d device(s) from whitelist", count);
+            }
+        }
+
+        nvs_close(handle);
+    }
+
+    void BleAdvScanner::save_to_nvs()
+    {
+        nvs_handle_t handle;
+        if (nvs_open("ble_wl", NVS_READWRITE, &handle) != ESP_OK) {
+            ESP_LOGE(TAG, "NVS: failed to open for writing");
+            return;
+        }
+
+        uint8_t macs[bridge::MAX_DEVICES][6];
+        uint8_t types[bridge::MAX_DEVICES];
+        for (size_t i = 0; i < whitelist_count_; i++) {
+            memcpy(macs[i], whitelist_[i].mac, 6);
+            types[i] = whitelist_[i].device_type;
+        }
+
+        nvs_set_u8(handle, "count", (uint8_t)whitelist_count_);
+        nvs_set_blob(handle, "macs", macs, whitelist_count_ * 6);
+        nvs_set_blob(handle, "types", types, whitelist_count_);
+        nvs_commit(handle);
+        nvs_close(handle);
+
+        ESP_LOGI(TAG, "NVS: saved %d device(s) to whitelist", whitelist_count_);
+    }
+
+    void BleAdvScanner::clear_all()
+    {
+        xSemaphoreTake(whitelist_mutex_, portMAX_DELAY);
+        memset(whitelist_, 0, sizeof(whitelist_));
+        whitelist_count_ = 0;
+        xSemaphoreGive(whitelist_mutex_);
+
+        nvs_handle_t handle;
+        if (nvs_open("ble_wl", NVS_READWRITE, &handle) == ESP_OK) {
+            nvs_erase_all(handle);
+            nvs_commit(handle);
+            nvs_close(handle);
+        }
+
+        ESP_LOGW(TAG, "Whitelist cleared (factory reset)");
+    }
+
     void BleAdvScanner::start()
     {
         esp_err_t ret = nimble_port_init();
@@ -40,25 +118,27 @@ namespace ble
         nimble_port_freertos_init(host_task);
     }
 
-    bool BleAdvScanner::pair(const uint8_t mac[6])
+    bool BleAdvScanner::pair(const uint8_t mac[6], uint8_t device_type)
     {
         xSemaphoreTake(whitelist_mutex_, portMAX_DELAY);
         // Idempotent: already in whitelist is OK
-        for (size_t i = 0; i < whitelist_count_; i++) 
-        {
-            if (memcmp(whitelist_[i], mac, 6) == 0) 
-            {
+        for (size_t i = 0; i < whitelist_count_; i++) {
+            if (memcmp(whitelist_[i].mac, mac, 6) == 0) {
                 xSemaphoreGive(whitelist_mutex_);
                 return true;
             }
         }
         bool ok = false;
-        if (whitelist_count_ < bridge::MAX_DEVICES) 
-        {
-            memcpy(whitelist_[whitelist_count_++], mac, 6);
+        if (whitelist_count_ < bridge::MAX_DEVICES) {
+            memcpy(whitelist_[whitelist_count_].mac, mac, 6);
+            whitelist_[whitelist_count_].device_type = device_type;
+            whitelist_[whitelist_count_].last_data   = 0xFF;  // neplatná hodnota → první paket vždy projde
+            whitelist_[whitelist_count_].valid        = true;
+            whitelist_count_++;
             ok = true;
         }
         xSemaphoreGive(whitelist_mutex_);
+        if (ok) save_to_nvs();
         return ok;
     }
 
@@ -66,39 +146,46 @@ namespace ble
     {
         xSemaphoreTake(whitelist_mutex_, portMAX_DELAY);
         bool ok = false;
-        for (size_t i = 0; i < whitelist_count_; i++) 
-        {
-            if (memcmp(whitelist_[i], mac, 6) == 0) 
-            {
+        for (size_t i = 0; i < whitelist_count_; i++) {
+            if (memcmp(whitelist_[i].mac, mac, 6) == 0) {
                 whitelist_count_--;
-                memcpy(whitelist_[i], whitelist_[whitelist_count_], 6); //přepíšu mazaný prvkem na posledním místě
+                whitelist_[i] = whitelist_[whitelist_count_];  // přepíš mazaný posledním
+                whitelist_[whitelist_count_].valid = false;
                 ok = true;
                 break;
             }
         }
         xSemaphoreGive(whitelist_mutex_);
+        if (ok) save_to_nvs();
         return ok;
     }
 
     bool BleAdvScanner::is_whitelisted(const uint8_t mac[6])
     {
         xSemaphoreTake(whitelist_mutex_, portMAX_DELAY);
-        if (whitelist_count_ == 0) 
-        {
+        if (whitelist_count_ == 0) {
             xSemaphoreGive(whitelist_mutex_);
-            return false;  // prázdný whitelist = nic nespárováno, blokujeme vše
+            return false;
         }
-
-        for (size_t i = 0; i < whitelist_count_; i++) 
-        {
-            if (memcmp(whitelist_[i], mac, 6) == 0) 
-            {
+        for (size_t i = 0; i < whitelist_count_; i++) {
+            if (memcmp(whitelist_[i].mac, mac, 6) == 0) {
                 xSemaphoreGive(whitelist_mutex_);
                 return true;
             }
         }
         xSemaphoreGive(whitelist_mutex_);
         return false;
+    }
+
+    // Volá se pod zamčeným mutexem — vrátí pointer na záznam nebo nullptr
+    BleAdvScanner::whitelist_entry_t *BleAdvScanner::find_entry(const uint8_t mac[6])
+    {
+        for (size_t i = 0; i < whitelist_count_; i++) {
+            if (memcmp(whitelist_[i].mac, mac, 6) == 0) {
+                return &whitelist_[i];
+            }
+        }
+        return nullptr;
     }
 
     // -------------------------------------------------------------------------
@@ -180,14 +267,45 @@ namespace ble
             return 0;
         }
 
-        if (!is_whitelisted(disc->addr.val)) {
+        bridge::device_state_t state;
+        if (!parse_adv(disc, state)) {
             return 0;
         }
 
-        bridge::device_state_t state;
-        if (parse_adv(disc, state)) {
+        xSemaphoreTake(whitelist_mutex_, portMAX_DELAY);
+        whitelist_entry_t *entry = find_entry(disc->addr.val);
+        if (!entry) {
+            xSemaphoreGive(whitelist_mutex_);
+            return 0;
+        }
+        bool changed = (entry->last_data != state.data);
+        if (changed) {
+            entry->last_data = state.data;
+        }
+        xSemaphoreGive(whitelist_mutex_);
+
+        if((entry->device_type == 0x03)&&(state.data))
+        {
+            state.data = 0xEE;
+
+            if (changed) {
+            ESP_LOGI(TAG, "BLE RX MAC=%02X:%02X:%02X:%02X:%02X:%02X polarita=%s", state.mac[5], state.mac[4], state.mac[3],
+                     state.mac[2], state.mac[1], state.mac[0],state.data ? "ON" : "OFF");
             xQueueSend(queue_, &state, 0);
         }
+
+        }
+
+        else if((entry->device_type == 0x01)||(entry->device_type == 0x02))
+        {
+            if (changed) 
+            {
+                ESP_LOGI(TAG, "BLE RX MAC=%02X:%02X:%02X:%02X:%02X:%02X polarita=%s", state.mac[5], state.mac[4], state.mac[3],
+                         state.mac[2], state.mac[1], state.mac[0],state.data ? "ON" : "OFF");
+                xQueueSend(queue_, &state, 0);
+            }
+        }  
+
 
         return 0;
     }
@@ -210,7 +328,7 @@ namespace ble
 
             // Manufacturer Specific Data: [company_id: 2B][data: 1B]
             if (ad_type == 0xFF && ad_data_len >= 3) {
-                out.cmd  = 0;
+                out.cmd  = bridge::CMD_ONOFF_STATUS;
                 out.data = ad_data[2];
                 return true;
             }
