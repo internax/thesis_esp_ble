@@ -93,14 +93,13 @@ extern "C" void app_main(void)
     ESP_ERROR_CHECK(ret);
 
     // UART fronty
-    QueueHandle_t uart_tx = xQueueCreate(4, sizeof(bridge::device_state_t));
     QueueHandle_t uart_rx = xQueueCreate(4, sizeof(bridge::device_state_t));
 
     // Komponenty
     static nfc::Pn532          pn532(NFC_UART_PORT, NFC_TX_PIN, NFC_RX_PIN);
-    static ble::BleAdvScanner  scanner(uart_tx);
-    static uart::UartProtocol  uart_proto(uart_tx, uart_rx,
+    static uart::UartProtocol  uart_proto(uart_rx,
                                           UART_PORT, UART_BAUD, UART_TX_PIN, UART_RX_PIN);
+    static ble::BleAdvScanner  scanner(uart_proto);
     static nfc::NfcPairing     nfc_pairing(pn532, scanner, uart_proto,
                                            BTN_PAIR, BTN_UNPAIR);
     static led::LedIndicator   led_indicator(LED_PIN);

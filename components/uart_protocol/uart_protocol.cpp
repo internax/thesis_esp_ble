@@ -10,9 +10,9 @@ namespace uart
     // Constructor — configures and installs the UART driver
     // -------------------------------------------------------------------------
 
-    UartProtocol::UartProtocol(QueueHandle_t tx_queue, QueueHandle_t rx_queue,
+    UartProtocol::UartProtocol(QueueHandle_t rx_queue,
                                uart_port_t port, int baud_rate, int tx_pin, int rx_pin)
-        : tx_queue_(tx_queue), rx_queue_(rx_queue), port_(port)
+        : rx_queue_(rx_queue), port_(port)
     {
         const uart_config_t cfg = {
             .baud_rate  = baud_rate,
@@ -27,7 +27,8 @@ namespace uart
                                      UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
         // RX buffer must be > 128 (HW FIFO size); no TX ring buffer (synchronous writes)
         ESP_ERROR_CHECK(uart_driver_install(port_, 256, 0, 0, nullptr, 0));
-        tx_mutex_ = xSemaphoreCreateMutex();
+        tx_mutex_           = xSemaphoreCreateMutex();
+        send_reliable_mutex_ = xSemaphoreCreateMutex();
     }
 
     // -------------------------------------------------------------------------
@@ -36,26 +37,35 @@ namespace uart
 
     void UartProtocol::start()
     {
-        xTaskCreate(send_task,    "uart_tx", 2048, this, 5, nullptr);
         xTaskCreate(receive_task, "uart_rx", 2048, this, 5, nullptr);
     }
 
     bool UartProtocol::send_reliable(const bridge::device_state_t &state, int retries, uint32_t timeout_ms)
     {
+        xSemaphoreTake(send_reliable_mutex_, portMAX_DELAY);
+
+        // Zahoď stale ACKy z předchozích zpráv
+        bridge::device_state_t discard;
+        while (xQueueReceive(rx_queue_, &discard, 0) == pdTRUE) {}
+
         uint8_t frame[FRAME_SIZE];
         encode(state, frame);
 
+        bool ok = false;
         for (int attempt = 1; attempt <= retries; attempt++) {
             xSemaphoreTake(tx_mutex_, portMAX_DELAY);
             uart_write_bytes(port_, frame, FRAME_SIZE);
             xSemaphoreGive(tx_mutex_);
 
             if (wait_for_ack(timeout_ms)) {
-                return true;
+                ok = true;
+                break;
             }
             ESP_LOGW(TAG, "send_reliable: attempt %d/%d — no ACK_OK", attempt, retries);
         }
-        return false;
+
+        xSemaphoreGive(send_reliable_mutex_);
+        return ok;
     }
 
     bool UartProtocol::wait_for_ack(uint32_t timeout_ms)
@@ -72,41 +82,9 @@ namespace uart
     // Static task entry points
     // -------------------------------------------------------------------------
 
-    void UartProtocol::send_task(void *arg)
-    {
-        static_cast<UartProtocol *>(arg)->send_loop();
-    }
-
     void UartProtocol::receive_task(void *arg)
     {
         static_cast<UartProtocol *>(arg)->receive_loop();
-    }
-
-    // -------------------------------------------------------------------------
-    // send_loop — dequeues device_state_t entries and sends encoded binary frames
-    // -------------------------------------------------------------------------
-
-    void UartProtocol::send_loop()
-    {
-        bridge::device_state_t state;
-        uint8_t frame[FRAME_SIZE];
-
-        while (true) {
-            if (xQueueReceive(tx_queue_, &state, portMAX_DELAY) == pdTRUE) {
-                encode(state, frame);
-                xSemaphoreTake(tx_mutex_, portMAX_DELAY);
-                int written = uart_write_bytes(port_, frame, FRAME_SIZE);
-                xSemaphoreGive(tx_mutex_);
-                if (written != static_cast<int>(FRAME_SIZE)) {
-                    ESP_LOGE(TAG, "UART write error: wrote %d of %zu bytes", written, FRAME_SIZE);
-                } else {
-                    ESP_LOGD(TAG, "TX cmd=0x%02X mac=%02X:%02X:%02X:%02X:%02X:%02X",
-                             state.cmd,
-                             state.mac[5], state.mac[4], state.mac[3],
-                             state.mac[2], state.mac[1], state.mac[0]);
-                }
-            }
-        }
     }
 
     // -------------------------------------------------------------------------

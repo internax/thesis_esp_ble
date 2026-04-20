@@ -15,12 +15,13 @@ namespace ble
     // Public
     // -------------------------------------------------------------------------
 
-    BleAdvScanner::BleAdvScanner(QueueHandle_t queue)
-        : queue_(queue), whitelist_count_(0)
+    BleAdvScanner::BleAdvScanner(uart::UartProtocol &uart)
+        : uart_(uart), status_queue_(nullptr), whitelist_count_(0)
     {
         assert(instance_ == nullptr && "BleAdvScanner instance can exist only once!");
         instance_ = this;
         whitelist_mutex_ = xSemaphoreCreateMutex();
+        status_queue_    = xQueueCreate(4, sizeof(bridge::device_state_t));
     }
 
     void BleAdvScanner::load_from_nvs()
@@ -116,6 +117,7 @@ namespace ble
         ble_store_config_init();
 
         nimble_port_freertos_init(host_task);
+        xTaskCreate(status_task, "ble_status_tx", 4096, this, 4, nullptr);
     }
 
     bool BleAdvScanner::pair(const uint8_t mac[6], uint8_t device_type)
@@ -191,6 +193,26 @@ namespace ble
     // -------------------------------------------------------------------------
     // Statické callbacky — pouze přeposílají volání na instanci
     // -------------------------------------------------------------------------
+
+    void BleAdvScanner::status_task(void *arg)
+    {
+        static_cast<BleAdvScanner *>(arg)->status_loop();
+    }
+
+    void BleAdvScanner::status_loop()
+    {
+        static constexpr int      RETRIES    = 3;
+        static constexpr uint32_t TIMEOUT_MS = 500;
+
+        bridge::device_state_t state;
+        while (true) {
+            if (xQueueReceive(status_queue_, &state, portMAX_DELAY) == pdTRUE) {
+                if (!uart_.send_reliable(state, RETRIES, TIMEOUT_MS)) {
+                    ESP_LOGW(TAG, "STATUS send failed after %d attempts", RETRIES);
+                }
+            }
+        }
+    }
 
     void BleAdvScanner::host_task(void *param)
     {
@@ -291,7 +313,7 @@ namespace ble
             if (changed) {
             ESP_LOGI(TAG, "BLE RX MAC=%02X:%02X:%02X:%02X:%02X:%02X polarita=%s", state.mac[5], state.mac[4], state.mac[3],
                      state.mac[2], state.mac[1], state.mac[0],state.data ? "ON" : "OFF");
-            xQueueSend(queue_, &state, 0);
+            xQueueSend(status_queue_, &state, 0);
         }
 
         }
@@ -302,7 +324,7 @@ namespace ble
             {
                 ESP_LOGI(TAG, "BLE RX MAC=%02X:%02X:%02X:%02X:%02X:%02X polarita=%s", state.mac[5], state.mac[4], state.mac[3],
                          state.mac[2], state.mac[1], state.mac[0],state.data ? "ON" : "OFF");
-                xQueueSend(queue_, &state, 0);
+                xQueueSend(status_queue_, &state, 0);
             }
         }  
 

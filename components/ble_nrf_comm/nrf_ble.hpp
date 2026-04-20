@@ -11,13 +11,14 @@
 #include "host/util/util.h"
 /* Shared protocol types */
 #include "bridge_types.hpp"
+#include "uart_protocol.hpp"
 
 namespace ble
 {
     class BleAdvScanner
     {
     public:
-        BleAdvScanner(QueueHandle_t queue);
+        BleAdvScanner(uart::UartProtocol &uart);
         void start();
 
         // Whitelist — called by NfcPairing
@@ -27,7 +28,8 @@ namespace ble
         void clear_all();   // factory reset — wipes RAM whitelist + NVS
 
     private:
-        QueueHandle_t          queue_;
+        uart::UartProtocol    &uart_;
+        QueueHandle_t          status_queue_;
         static BleAdvScanner  *instance_;
 
         // Whitelist
@@ -50,12 +52,14 @@ namespace ble
         static void on_sync_cb();
         static void on_reset_cb(int reason);
         static int  on_gap_event_cb(struct ble_gap_event *event, void *arg);
+        static void status_task(void *arg);
 
         // Instance methods with actual logic
         void on_sync();
         void on_reset(int reason);
         int  on_gap_event(struct ble_gap_event *event);
         void start_scan();
+        void status_loop();
         bool parse_adv(const struct ble_gap_disc_desc *disc, bridge::device_state_t &out);
     };
 }

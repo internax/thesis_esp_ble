@@ -30,10 +30,10 @@ namespace uart
          * @param tx_pin    GPIO number for UART TX
          * @param rx_pin    GPIO number for UART RX
          */
-        UartProtocol(QueueHandle_t tx_queue, QueueHandle_t rx_queue,
+        UartProtocol(QueueHandle_t rx_queue,
                      uart_port_t port, int baud_rate, int tx_pin, int rx_pin);
 
-        /** Starts send_loop and receive_loop as separate FreeRTOS tasks. */
+        /** Starts receive_loop as a FreeRTOS task. */
         void start();
 
         /**
@@ -60,15 +60,13 @@ namespace uart
         bool wait_for_ack(uint32_t timeout_ms);
 
     private:
-        QueueHandle_t     tx_queue_;
         QueueHandle_t     rx_queue_;
         uart_port_t       port_;
-        SemaphoreHandle_t tx_mutex_;    // serialises send_loop and send_reliable
+        SemaphoreHandle_t tx_mutex_;          // serialises concurrent UART writes
+        SemaphoreHandle_t send_reliable_mutex_; // ensures only one send_reliable at a time
 
-        static void send_task(void *arg);
         static void receive_task(void *arg);
 
-        void send_loop();
         void receive_loop();
 
         static void    encode(const bridge::device_state_t &state, uint8_t out[FRAME_SIZE]);
